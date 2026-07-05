@@ -41,7 +41,7 @@ uint8_t carryBuf[CARRY_BUFFSIZE];
 size_t carryLen;
 size_t imagebuf_index = 0;
 
-int16_t updateTime = 0;
+int64_t updateTime = 0;
 
 SPIClass *tftSPI = new SPIClass(HSPI);
 Adafruit_ST7789 tft = Adafruit_ST7789(tftSPI, TFT_CS, TFT_DC, TFT_RST);
@@ -221,8 +221,8 @@ void loop() {
   //300,000,000ms in 5mins
   if(currentTime - updateTime >= 300000000){
     Serial.println("Updating");
+    updateTime = esp_timer_get_time();
     fetchImageData();
     tft.drawRGBBitmap(0,0,image,SCREEN_WIDTH,SCREEN_HEIGHT);
-    updateTime = esp_timer_get_time();
   }
 }
