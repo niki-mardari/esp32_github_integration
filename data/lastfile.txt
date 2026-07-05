@@ -1,1 +1,1 @@
-../data/images/alien_romulus.csv
+./data/images/alien_romulus.csv
