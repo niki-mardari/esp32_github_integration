@@ -4,7 +4,7 @@
  * Purpose:
  * 
  * Github repository: https://github.com/matas-noreika/esp32_github_integration
- * File link on repository: https://raw.githubusercontent.com/matas-noreika/esp32_github_integration/refs/heads/main/data/current.csv
+ * File link on repository: https://raw.githubusercontent.com/matas-noreika/esp32_github_integration/refs/heads/image-data/data/current.csv
 */
 
 #include <WiFi.h>
@@ -21,8 +21,7 @@
 const char* ssid     = "Matas ltu";
 const char* password = "matas-ltu";
 
-// Example: https://raw.githubusercontent.com/espressif/arduino-esp32/master/README.md
-const char* url = "https://raw.githubusercontent.com/matas-noreika/esp32_github_integration/refs/heads/main/data/scream.csv";
+const char* url = "https://raw.githubusercontent.com/matas-noreika/esp32_github_integration/refs/heads/image-data/data/current.csv";
 
 #define SCREEN_HEIGHT 240
 #define SCREEN_WIDTH 135
@@ -212,10 +211,18 @@ void setup() {
 
 void loop() {
   int64_t currentTime = esp_timer_get_time();
+  //Serial.println(currentTime);
+  //1,200,000,000ms in 20mins
+  // if(updateTime - currentTime >= 1200000000){
+  //   fetchImageData();
+  //   tft.drawRGBBitmap(0,0,image,SCREEN_WIDTH,SCREEN_HEIGHT);
+  //   updateTime = currentTime;
+  // }
   //300,000,000ms in 5mins
-  if(updateTime - currentTime >= 300000000){
+  if(currentTime - updateTime >= 300000000){
+    Serial.println("Updating");
     fetchImageData();
     tft.drawRGBBitmap(0,0,image,SCREEN_WIDTH,SCREEN_HEIGHT);
-    updateTime = currentTime;
+    updateTime = esp_timer_get_time();
   }
 }
