@@ -12,6 +12,7 @@
 #include <HTTPClient.h>
 #include <Adafruit_ST7789.h>
 #include <SPI.h>
+#include <esp_timer.h>
 
 #define CARRY_BUFFSIZE 10 // max size of partial token needed to be carried (6 (max token size) + 4 (overhead))
 #define READ_BUFFSIZE 1024 // max size of chunk to read from HTTP stream
@@ -40,6 +41,8 @@ uint16_t image[240*135*2] = {0};
 uint8_t carryBuf[CARRY_BUFFSIZE];
 size_t carryLen;
 size_t imagebuf_index = 0;
+
+int16_t updateTime = 0;
 
 SPIClass *tftSPI = new SPIClass(HSPI);
 Adafruit_ST7789 tft = Adafruit_ST7789(tftSPI, TFT_CS, TFT_DC, TFT_RST);
@@ -208,5 +211,11 @@ void setup() {
 }
 
 void loop() {
-  // nothing here
+  int64_t currentTime = esp_timer_get_time();
+  //300,000,000ms in 5mins
+  if(updateTime - currentTime >= 300000000){
+    fetchImageData();
+    tft.drawRGBBitmap(0,0,image,SCREEN_WIDTH,SCREEN_HEIGHT);
+    updateTime = currentTime;
+  }
 }
