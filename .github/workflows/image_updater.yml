@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/Checkout@v4
+        with:
+          ref: image-data
       - name: Update the file
         run: bash ./scripts/random_file.sh
       - name: Commit and Push
