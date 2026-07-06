@@ -1,1 +1,1 @@
-./data/images/IMG_7695.csv
+./data/images/scream.csv
