@@ -1,1 +1,1 @@
-./data/images/jaws.csv
+./data/images/no_quiero_balls.csv
