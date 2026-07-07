@@ -1,1 +1,1 @@
-./data/images/IMG_7778.csv
+./data/images/IMG_7756.csv
