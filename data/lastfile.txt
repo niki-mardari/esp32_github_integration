@@ -1,1 +1,1 @@
-./data/images/scream.csv
+./data/images/jaws.csv
