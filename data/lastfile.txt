@@ -1,1 +1,1 @@
-./data/images/no_quiero_balls.csv
+./data/images/alien_romulus.csv
