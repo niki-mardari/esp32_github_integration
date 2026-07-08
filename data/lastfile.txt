@@ -1,1 +1,1 @@
-data/images_240x320/mark_240x320.csv
+data/images_240x320/miku1_240x320.csv
