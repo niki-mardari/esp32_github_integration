@@ -23,7 +23,7 @@
 #define TOKEN_SIZE 7 // size of hex code expected 0x0000\0 <- format
 
 const char* ssid     = "yep";
-const char* password = "123456789";
+const char* password = "12345678";
 
 const char* url = "https://raw.githubusercontent.com/niki-mardari/esp32_github_integration/refs/heads/image-data/data/current.csv";
 
@@ -54,8 +54,11 @@ void connectWiFi(){
   WiFi.begin(ssid, password);
   Serial.print("Connecting to WiFi");
   while (WiFi.status() != WL_CONNECTED) {
-    delay(300);
-    Serial.print(".");
+    Serial.print("\n");
+    for(auto i{0uz}; i++ < 5;){ // auto get size needed for unsigned int 0, post increment while its less than 5
+        Serial.print(".");
+        delay(300);
+    }
   }
   Serial.println("\nConnected, IP: " + WiFi.localIP().toString());
 }
@@ -78,7 +81,7 @@ void handleToken(const char* token) {
   if (end == token || *end != '\0') { //if non of the characters were evaluated or only partially
     Serial.printf("Malformed token: \"%s\"\n", token);
   } else {
-    Serial.printf("Parsed byte: 0x%02lX\n", value);
+    // Serial.printf("Parsed byte: 0x%02lX\n", value); // Made Esp really slow with large image 
     image[imagebuf_index] = value;
     imagebuf_index++;
   }
