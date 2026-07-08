@@ -1,7 +1,11 @@
 /*
- * Programmer: Matas Noreika
- * Date: 2026-07-04
- * Purpose:
+ * Programmer: Matas Noreika, adjusted by Niki Mardari
+ * Date: 2026-07-07
+ * Purpose: Get hardware talking to github
+ * Adjusted for current hardware 
+ * 
+ * Hardware: 
+ * Esp32S3 N16R8 Devkit C --> ST7789 GMT20-02-7P SPI display 
  * 
  * Github repository: https://github.com/matas-noreika/esp32_github_integration
  * File link on repository: https://raw.githubusercontent.com/matas-noreika/esp32_github_integration/refs/heads/image-data/data/current.csv
@@ -18,25 +22,25 @@
 #define READ_BUFFSIZE 1024 // max size of chunk to read from HTTP stream
 #define TOKEN_SIZE 7 // size of hex code expected 0x0000\0 <- format
 
-const char* ssid     = "Matas ltu";
-const char* password = "matas-ltu";
+const char* ssid     = "yep";
+const char* password = "12345678";
 
-const char* url = "https://raw.githubusercontent.com/matas-noreika/esp32_github_integration/refs/heads/image-data/data/current.csv";
+const char* url = "https://raw.githubusercontent.com/niki-mardari/esp32_github_integration/refs/heads/image-data/data/current.csv";
 
-#define SCREEN_HEIGHT 240
-#define SCREEN_WIDTH 135
+#define SCREEN_HEIGHT 320
+#define SCREEN_WIDTH 240
 
 // Genuine Tenstar Robot ESP32-S3 TFT Pinout
-#define TFT_MOSI     35
-#define TFT_SCLK     36
-#define TFT_MISO     37  // Not physically used by screen but assigned to SPI hardware
-#define TFT_CS        7
-#define TFT_DC       39
-#define TFT_RST      40
-#define TFT_BL       45  // Backlight pin
+#define TFT_MOSI     11
+#define TFT_SCLK     12
+#define TFT_MISO     -1  // Not physically used by screen but assigned to SPI hardware
+#define TFT_CS        10
+#define TFT_DC       6
+#define TFT_RST      7
+#define TFT_BL       5  // Backlight pin
 
 //create image data map
-uint16_t image[240*135*2] = {0};
+uint16_t image[240*320] = {0};
 uint8_t carryBuf[CARRY_BUFFSIZE];
 size_t carryLen;
 size_t imagebuf_index = 0;
@@ -50,8 +54,11 @@ void connectWiFi(){
   WiFi.begin(ssid, password);
   Serial.print("Connecting to WiFi");
   while (WiFi.status() != WL_CONNECTED) {
-    delay(300);
-    Serial.print(".");
+    Serial.print("\n");
+    for(auto i{0uz}; i++ < 5;){ // auto get size needed for unsigned int 0, post increment while its less than 5
+        Serial.print(".");
+        delay(300);
+    }
   }
   Serial.println("\nConnected, IP: " + WiFi.localIP().toString());
 }
@@ -74,7 +81,7 @@ void handleToken(const char* token) {
   if (end == token || *end != '\0') { //if non of the characters were evaluated or only partially
     Serial.printf("Malformed token: \"%s\"\n", token);
   } else {
-    Serial.printf("Parsed byte: 0x%02lX\n", value);
+    // Serial.printf("Parsed byte: 0x%02lX\n", value); // Made Esp really slow with large image 
     image[imagebuf_index] = value;
     imagebuf_index++;
   }
