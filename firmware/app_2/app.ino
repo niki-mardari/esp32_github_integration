@@ -11,6 +11,10 @@
  * File link on repository: https://raw.githubusercontent.com/matas-noreika/esp32_github_integration/refs/heads/image-data/data/current.csv
 */
 
+// Issues:
+// Image runner doesnt seem to update image in current.csv, could be getting cached.
+// Need to update runner
+
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
@@ -154,6 +158,7 @@ void fetchImageData(){
       // Combined buffer: carry-over space + fresh read space
       uint8_t combinedBuf[CARRY_BUFFSIZE + READ_BUFFSIZE];
 
+      Serial.println("Fetching Data");
       while (https.connected() && (contentLength > 0 || contentLength == -1)) {
         size_t availableBytes = stream->available();
 
@@ -168,12 +173,11 @@ void fetchImageData(){
 
           size_t totalLen = carryLen + readBytes;
           carryLen = 0;  // consumed; processBuffer() will repopulate if needed
-
-          Serial.println("Carry data: ");
-          Serial.write(carryBuf, carryLen);
-          Serial.println("Chunk data + carry: ");
-          Serial.write(combinedBuf, totalLen);
-          Serial.println();
+          //Serial.println("Carry data: ");
+          //Serial.write(carryBuf, carryLen);
+          //Serial.println("Chunk data + carry: ");
+          //Serial.write(combinedBuf, totalLen);
+          //Serial.println();
           // 3. Process the combined buffer (carry + new data) as one unit
           processChunk(combinedBuf, totalLen);
 
@@ -181,6 +185,7 @@ void fetchImageData(){
         }
         delay(1);
       }
+      Serial.println("Done!");
 
       // flushRemaining();  // handle trailing token with no final delimiter
     } else {
