@@ -31,20 +31,21 @@ tft display with the image content.
 
 ```Shell
 .
-├── data # folder containing all data 
-│   ├── current.csv # main file read by micro-controller
-│   ├── images # Directory of all current available images (subject to change)
-│   │   ├── alien_romulus.csv
-│   │   ├── jaws.csv
-│   │   └── scream.csv
-│   └── lastfile.txt # record entry to prevent repeat image
-├── images_240x320 # Directory of all current available images (subject to change)
-│   │   ├── alien_romulus.csv
-│   │   ├── jaws.csv
-│   │   └── scream.csv
-│   └── lastfile.txt # record entry to prevent repeat image
+├── data
+│   ├── current.csv
+│   ├── lastfile.txt
+│   ├── images
+│   │   ├── alien_romulus.csv
+│   │   ├── jaws.csv
+│   │   └── scream.csv
+│   └── images_240x320
+│       ├── coke_240x320.csv
+│       ├── forge_240x320.csv
+│       ├── miku1_240x320.csv
+│       ├── miku2_240x320.csv
+│       └── reaper_240x320.csv
 └── scripts
-    ├── random_file.sh # main script that gets called by workflow
+    ├── random_file.sh
     └── test.sh
 ```
 
