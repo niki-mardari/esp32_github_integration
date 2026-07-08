@@ -22,8 +22,8 @@
 #define READ_BUFFSIZE 1024 // max size of chunk to read from HTTP stream
 #define TOKEN_SIZE 7 // size of hex code expected 0x0000\0 <- format
 
-const char* ssid     = "yep";
-const char* password = "12345678";
+const char* ssid     = ""; // Put wifi ssid here
+const char* password = ""; // Put wifi password here
 
 const char* url = "https://raw.githubusercontent.com/niki-mardari/esp32_github_integration/refs/heads/image-data/data/current.csv";
 
