@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: ordered-image-updater
+  cancel-in-progress: false
+
 jobs:
   update-file:
     runs-on: ubuntu-latest
@@ -25,7 +29,7 @@ jobs:
 
           mkdir -p data
 
-mapfile -t files < <(find data/images_240x320 -maxdepth 1 -type f -name "*.csv" | sort)
+          mapfile -t files < <(find data/images_240x320 -maxdepth 1 -type f -name "*.csv" | sort)
 
           if [ ${#files[@]} -eq 0 ]; then
             echo "No CSV files found in data/images_240x320"
@@ -58,7 +62,6 @@ mapfile -t files < <(find data/images_240x320 -maxdepth 1 -type f -name "*.csv" 
           output = Path("data/current.csv")
 
           text = selected.read_text(encoding="utf-8", errors="ignore")
-
           values = re.findall(r"0x[0-9a-fA-F]{4}(?![0-9a-fA-F])", text)
 
           expected = 240 * 320
@@ -93,5 +96,5 @@ mapfile -t files < <(find data/images_240x320 -maxdepth 1 -type f -name "*.csv" 
             exit 0
           fi
 
-          git commit -m "update current image in order"
+          git commit -m "update current image to $(cat data/lastfile.txt)"
           git push origin HEAD:image-data
