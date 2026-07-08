@@ -25,10 +25,10 @@ jobs:
 
           mkdir -p data
 
-          mapfile -t files < <(find images_240x320 -maxdepth 1 -type f -name "*.csv" | sort)
+mapfile -t files < <(find data/images_240x320 -maxdepth 1 -type f -name "*.csv" | sort)
 
           if [ ${#files[@]} -eq 0 ]; then
-            echo "No CSV files found in images_240x320"
+            echo "No CSV files found in data/images_240x320"
             exit 1
           fi
 
