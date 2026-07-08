@@ -16,6 +16,8 @@ tft display with the image content.
 └── firmware
     ├── app # Main app that implements all features
     │   └── app.ino
+    ├── app2 # Main app with ST7789 GMT20-02-7P SPI display 
+    │   └── app2.ino
     └── examples # Directory of code examples
         ├── file_fetch_example
         │   └── file_fetch_example.ino
@@ -32,6 +34,11 @@ tft display with the image content.
 ├── data # folder containing all data 
 │   ├── current.csv # main file read by micro-controller
 │   ├── images # Directory of all current available images (subject to change)
+│   │   ├── alien_romulus.csv
+│   │   ├── jaws.csv
+│   │   └── scream.csv
+│   └── lastfile.txt # record entry to prevent repeat image
+├── images_240x320 # Directory of all current available images (subject to change)
 │   │   ├── alien_romulus.csv
 │   │   ├── jaws.csv
 │   │   └── scream.csv
