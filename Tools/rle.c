@@ -61,40 +61,20 @@ int main(int argc, char *argv[]) {
             // Delimiter/Value boundary hit! Print the sequence.
             // printf("%d*0x%04X, ", count, current_val);
 
-<<<<<<< HEAD
-<<<<<<< HEAD
             fprintf(fptr_write, "%d*0x%04X\n", count, current_val);
 
-=======
+
             // checking if the file is created
             fprintf(fptr_write, "%d*0x%04X\n", count, current_val);
->>>>>>> 3fbbfba (Fixed bug when parsing last segment of data)
-=======
-            fprintf(fptr_write, "%d*0x%04X\n", count, current_val);
-
->>>>>>> a66f5f5 (Fixed bug when parsing last segment of data)
             // Reset values and start agin
             current_val = next_val;
             count = 1;
         }
     }
-<<<<<<< HEAD
-<<<<<<< HEAD
         // printf("%d*0x%04X\n", count, current_val); // Print the final tracking sequence
         fclose(fptr_read); // Close the file after reading
         fclose(fptr_write); // Close the output file
-=======
 
-    printf("%d*0x%04X\n", count, current_val); // Print the final tracking sequence
-
-    fclose(fptr_read); // Close the file after reading
-    fclose(fptr_write); // Close the output file
->>>>>>> 3fbbfba (Fixed bug when parsing last segment of data)
-=======
-        // printf("%d*0x%04X\n", count, current_val); // Print the final tracking sequence
-        fclose(fptr_read); // Close the file after reading
-        fclose(fptr_write); // Close the output file
->>>>>>> a66f5f5 (Fixed bug when parsing last segment of data)
 
     }
     return 0;
