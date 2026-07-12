@@ -58,7 +58,10 @@ int main(int argc, char *argv[]) {
             count++;
         } 
         else {
+            // Delimiter/Value boundary hit! Print the sequence.
+            // printf("%d*0x%04X, ", count, current_val);
 
+<<<<<<< HEAD
 <<<<<<< HEAD
             fprintf(fptr_write, "%d*0x%04X\n", count, current_val);
 
@@ -66,11 +69,16 @@ int main(int argc, char *argv[]) {
             // checking if the file is created
             fprintf(fptr_write, "%d*0x%04X\n", count, current_val);
 >>>>>>> 3fbbfba (Fixed bug when parsing last segment of data)
+=======
+            fprintf(fptr_write, "%d*0x%04X\n", count, current_val);
+
+>>>>>>> a66f5f5 (Fixed bug when parsing last segment of data)
             // Reset values and start agin
             current_val = next_val;
             count = 1;
         }
     }
+<<<<<<< HEAD
 <<<<<<< HEAD
         // printf("%d*0x%04X\n", count, current_val); // Print the final tracking sequence
         fclose(fptr_read); // Close the file after reading
@@ -82,19 +90,21 @@ int main(int argc, char *argv[]) {
     fclose(fptr_read); // Close the file after reading
     fclose(fptr_write); // Close the output file
 >>>>>>> 3fbbfba (Fixed bug when parsing last segment of data)
+=======
+        // printf("%d*0x%04X\n", count, current_val); // Print the final tracking sequence
+        fclose(fptr_read); // Close the file after reading
+        fclose(fptr_write); // Close the output file
+>>>>>>> a66f5f5 (Fixed bug when parsing last segment of data)
 
     }
     return 0;
 }
 /*
-void itob(uint32_t current){
-    char* buff = (char *)malloc(33*sizeof(char));
+void itob(uint64_t count){
     for (int i = 63; i >= 0; i--) {
-        int bit = (current >> i) & 1;
-        snprintf(buff, 64, "%d", bit);
-        printf("\n%s", buffer);
+        int bit = (count >> i) & 1;
+        printf("%d", bit);
     }
     printf("\n");
-    free(buff);
 }
 */
