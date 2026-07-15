@@ -5,86 +5,72 @@
 // Need to write headers in written file that tell it checksum
 // Binary RLE 2bytes count and 2 bytes color is apparently more efficient. 
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdint.h>
+// Rle for 240 by 320 image
 
-FILE* fptr_read;
-FILE* fptr_write;
+#include<stdio.h>
+#include<stdlib.h>
+#include<stdbool.h>
+#include<stdint.h>
 
-//void itob(uint64_t count);
+//#define readFile "data/current.csv"
+#define writeFile "rle_output.txt"
+#define width 240
+#define height 320
 
-int main(int argc, char *argv[]) {
+void rle(FILE* input, FILE* output){
 
-    if (argc != 2) {
-        printf("Usage: %s <filename>\n", argv[0]); // Could use printf or fprintf to standard output (Revision)
-        return 1;
-    } 
-    else {
+    char* ptr; // To increment each char
 
-        // Currently size of forge_240x320.csv, need to get it to automatically get size of imputted file!
+    char line[2048]; // 2048 bytes to store each row, actually need 240*7 bytes for value and comma
+    uint32_t count = 0;
+    uint16_t current = -1; // Sentinel value
+    uint16_t next;
+    uint32_t pixels = 0;
 
-        fprintf(stdout, "Compressing %s to RLE format...\n", argv[1]);
-        fptr_read = fopen(argv[1], "r");
+    for(int row = 0; row < height; row++){
+        fgets(line, sizeof(line), input);
+        ptr = line;
+        // Debugging
+        // if(row == 100) break;
 
-        // Check if the file was opened successfully
-        if (!fptr_read) {
-            fprintf(stderr, "Error: Could not open file! %s\n", argv[1]);
-            return 1;
-        }
-        fptr_write = fopen("rle.txt", "w");
-
-    // checking if the file is created
-    if (!fptr_write) 
-        fprintf(stderr, "Error: Could not create file rle.txt!\n");
-    else 
-        fprintf(stdout, "The file is created Successfully.\n");
-
-        // RLE logic:
-
-        uint16_t current_val = 0;
-        // Read the first hex value from the file
-        if (fscanf(fptr_read, "%x,", &current_val) != 1) {
-            fclose(fptr_read);
-            return 0; // File is empty or improperly formatted
-        }
-
-        uint32_t count = 1; // Initialize first hex count
-        uint16_t next_val;
-
-    // Loop through the rest of the text file token by token
-    while (fscanf(fptr_read, "%x,", &next_val) == 1) {
-        if (next_val == current_val) {
+        for(int col = 0; col < width; col++){
+            next = (uint16_t)strtol(ptr, &ptr, 16); // Parsing hex value, skipping comma
+            ptr++; // To skip the comma location
+            
+            if(current == next){
             count++;
-        } 
-        else {
-            // Delimiter/Value boundary hit! Print the sequence.
-            // printf("%d*0x%04X, ", count, current_val);
-
-            fprintf(fptr_write, "%d*0x%04X\n", count, current_val);
-
-
-            // checking if the file is created
-            fprintf(fptr_write, "%d*0x%04X\n", count, current_val);
-            // Reset values and start agin
-            current_val = next_val;
-            count = 1;
+            }
+            else{
+                if(count > 0){
+                    fprintf(output, "%x %d\n", current, count);
+                    }
+                    pixels += count;
+                    current = next;
+                    count = 1;
+                }  
+            }
         }
-    }
-        // printf("%d*0x%04X\n", count, current_val); // Print the final tracking sequence
-        fclose(fptr_read); // Close the file after reading
-        fclose(fptr_write); // Close the output file
+    // Reading last row because no next value 
+    fprintf(output, "%x %d\n", current, count);
+    pixels += count;
+    printf("\nDone!\nThe pixel sum is: %d\n", pixels);
+}
 
+int main(int argc, char* argv[])
+{
+    if(argc < 2) perror("\nUsage: rle3.exe <filename>.txt");
+    else{
+    FILE* input = fopen(argv[1], "r");
+    if(!input) return 1;
+
+    FILE* output = fopen(writeFile, "w");
+    if(!output) return 1;
+    
+    rle(input, output);
+    
+    fclose(input);
+    fclose(output);
 
     }
     return 0;
 }
-/*
-void itob(uint64_t count){
-    for (int i = 63; i >= 0; i--) {
-        int bit = (count >> i) & 1;
-        printf("%d", bit);
-    }
-    printf("\n");
-}
-*/
