@@ -13,7 +13,7 @@
 #include <stdint.h>
 
 #define WIDTH  240
-#define HEIGHT 320
+#define HEIGHT 135
 #define TOTAL_PIXELS (WIDTH * HEIGHT)
 
 #define OUTPUT_FILE "rle_output.bin"
