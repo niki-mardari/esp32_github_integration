@@ -1,0 +1,44 @@
+name: Ordered RLE Batch Updater
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "2/5 * * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ordered-rle-batch-updater
+  cancel-in-progress: false
+
+jobs:
+  update-rle-batch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout image-data branch
+        uses: actions/checkout@v4
+        with:
+          ref: image-data
+
+      - name: Create next RLE batch
+        shell: bash
+        run: |
+          bash scripts/update_rle_batch.sh 5
+
+      - name: Commit updated RLE batch
+        shell: bash
+        run: |
+          git config user.name "github-action[bot]"
+          git config user.email "github-action[bot]@users.noreply.github.com"
+
+          git add data/current_batch data/batch_lastfile.txt
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          git commit -m "update RLE image batch"
+          git push origin HEAD:image-data
