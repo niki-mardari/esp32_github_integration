@@ -1,1 +1,1 @@
-data/Encoded/coke.rle
+data/Encoded/no_quiero_balls.rle
