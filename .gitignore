@@ -3,3 +3,5 @@ large_images
 .venv
 
 *.exe
+*.bin
+
