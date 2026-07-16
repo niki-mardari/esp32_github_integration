@@ -1,11 +1,15 @@
 large_images
 
-# Build outputs
-*.exe
-tools/*.exe
-Tools/*.exe
+.venv
 
-# Windows/Linux build leftovers
+*.exe
+*.bin
+
+# RLE encoder build output
+Tools/*.exe
+tools/*.exe
+
+# General build outputs
+*.exe
 *.o
 *.out
-*.exe
