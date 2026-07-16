@@ -1,1 +1,12 @@
 large_images
+
+# Build outputs
+Tools/*.exe
+tools/*.exe
+Tools/data/
+tools/data/
+
+# Windows/Linux build leftovers
+*.o
+*.out
+*.exe
