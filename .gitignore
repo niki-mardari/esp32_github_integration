@@ -5,3 +5,11 @@ large_images
 *.exe
 *.bin
 
+# RLE encoder build output
+Tools/*.exe
+tools/*.exe
+
+# General build outputs
+*.exe
+*.o
+*.out
