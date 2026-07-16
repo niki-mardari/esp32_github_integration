@@ -1,10 +1,9 @@
 large_images
 
 # Build outputs
-Tools/*.exe
+*.exe
 tools/*.exe
-Tools/data/
-tools/data/
+Tools/*.exe
 
 # Windows/Linux build leftovers
 *.o
