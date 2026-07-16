@@ -1,84 +1,101 @@
 # Purpose:
-# Build the binary RLE encoder and encode all 135x240 RGB565 CSV images.
+# Build the RLE encoder and convert RGB565 CSV files into binary .rle files.
 #
-# Input folder:
-# data/images_135x240
+# Folder structure expected:
 #
-# Output folder:
-# data/Encoded
+# repo/
+# ├── Tools/
+# │   ├── Makefile
+# │   └── rle.c
+# └── data/
+#     ├── images_135x240/
+#     │   ├── image1.csv
+#     │   └── image2.csv
+#     └── Encoded/
+#
+# How to use from the repo root:
+#
+# Compile only:
+#   make -C Tools compile
+#
+# Encode one specific file:
+#   make -C Tools run FILE=../data/images_135x240/miku1_135x240_fullscreen.csv
+#
+# Encode all CSV files:
+#   make -C Tools batch
+#
+# Remove generated files:
+#   make -C Tools clean
 
+
+# C compiler to use
 CC = gcc
+
+# Compiler warning/settings flags
 CFLAGS = -Wall -Wextra -std=c11
 
-# Find the folder where this Makefile is stored.
-TOOLS_DIR := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
+# Source C file
+SRC = rle.c
 
-# Repo root is one folder above Tools.
-ROOT_DIR := $(abspath $(TOOLS_DIR)/..)
+# Output encoder program
+# This is stored in /tmp so it does not leave rle.exe inside Tools/
+# when you switch back to the main branch.
+ENCODER = /tmp/rle_encoder.exe
 
-# Safety check:
-# This Makefile should only be run on the image-data branch.
-CURRENT_BRANCH := $(shell git -C "$(ROOT_DIR)" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)
+# Folder containing input CSV images
+INPUT_DIR = ../data/images_135x240
 
-ifeq ($(CURRENT_BRANCH),unknown)
-$(error Could not detect Git branch. Make sure Git is installed in MSYS2 and you are inside the repo)
-endif
+# Folder where output RLE files will be saved
+OUTPUT_DIR = ../data/Encoded
 
-ifneq ($(CURRENT_BRANCH),image-data)
-$(error This Makefile must only be run on the image-data branch. Current branch is $(CURRENT_BRANCH))
-endif
 
-SRC = $(TOOLS_DIR)/rle.c
-ENCODER = $(TOOLS_DIR)/rle.exe
+# These are command names, not real files.
+.PHONY: compile run batch clean
 
-IMAGE_DIR = $(ROOT_DIR)/data/images_135x240
-ENCODED_DIR = $(ROOT_DIR)/data/Encoded
 
-CSV_FILES = $(wildcard $(IMAGE_DIR)/*.csv)
+# -------------------- Compile encoder --------------------
+# Builds rle.c into the encoder program.
 
-RLE_FILES = $(patsubst $(IMAGE_DIR)/%.csv,$(ENCODED_DIR)/%.rle,$(CSV_FILES))
+compile:
+	$(CC) $(CFLAGS) $(SRC) -o $(ENCODER)
 
-.PHONY: all build encode clean list
 
-all: encode
+# -------------------- Run on one file --------------------
+# Usage:
+# make -C Tools run FILE=../data/images_135x240/image_name.csv
 
-# -------------------- Build encoder --------------------
+run: compile
+	@if [ -z "$(FILE)" ]; then \
+		echo "Error: No FILE specified."; \
+		echo "Usage:"; \
+		echo "  make -C Tools run FILE=../data/images_135x240/image_name.csv"; \
+		exit 1; \
+	fi
+	mkdir -p $(OUTPUT_DIR)
+	$(ENCODER) "$(FILE)" "$(OUTPUT_DIR)/$(basename $(notdir $(FILE))).rle"
 
-build: $(ENCODER)
 
-$(ENCODER): $(SRC)
-	$(CC) $(CFLAGS) "$(SRC)" -o "$(ENCODER)"
+# -------------------- Run on batch --------------------
+# Converts every .csv file in ../data/images_135x240
+# into a .rle file in ../data/Encoded.
 
-# -------------------- Create output directory --------------------
+batch: compile
+	mkdir -p $(OUTPUT_DIR)
+	@for file in $(INPUT_DIR)/*.csv; do \
+		if [ ! -e "$$file" ]; then \
+			echo "No CSV files found in $(INPUT_DIR)"; \
+			exit 1; \
+		fi; \
+		name=$$(basename "$$file" .csv); \
+		echo "Encoding $$file -> $(OUTPUT_DIR)/$$name.rle"; \
+		$(ENCODER) "$$file" "$(OUTPUT_DIR)/$$name.rle"; \
+	done
+	@echo "Finished encoding all images."
 
-$(ENCODED_DIR):
-	mkdir -p "$(ENCODED_DIR)"
-
-# -------------------- Encode all images --------------------
-
-encode: $(ENCODER) $(RLE_FILES)
-	@echo Finished encoding all images.
-
-$(ENCODED_DIR)/%.rle: $(IMAGE_DIR)/%.csv $(ENCODER) | $(ENCODED_DIR)
-	"$(ENCODER)" "$<" "$@"
-
-# -------------------- Debug/list files --------------------
-
-list:
-	@echo Current branch:
-	@echo $(CURRENT_BRANCH)
-	@echo Repo root:
-	@echo $(ROOT_DIR)
-	@echo Tools dir:
-	@echo $(TOOLS_DIR)
-	@echo CSV input files:
-	@echo $(CSV_FILES)
-	@echo.
-	@echo RLE output files:
-	@echo $(RLE_FILES)
 
 # -------------------- Clean generated files --------------------
+# Removes the compiled encoder and generated .rle files.
 
 clean:
-	rm -f "$(ENCODER)"
-	rm -f "$(ENCODED_DIR)"/*.rle
+	rm -f $(ENCODER)
+	rm -f $(OUTPUT_DIR)/*.rle
