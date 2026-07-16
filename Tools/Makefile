@@ -98,4 +98,4 @@ batch: compile
 
 clean:
 	rm -f $(ENCODER)
-	rm -f $(OUTPUT_DIR)/*.rle
+#	rm -f $(OUTPUT_DIR)/*.rle
