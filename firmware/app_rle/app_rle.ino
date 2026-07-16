@@ -1,19 +1,17 @@
 /*
- * Programmer: Matas Noreika
- * Modified by: Niki Mardari
  * Date: 2026-07-15
  *
  * Purpose:
- * Download a binary RLE RGB565 image from GitHub,
- * decode it back into a 135x240 image buffer,
- * and display it on the Tenstar ESP32-S3 ST7789 screen.
+ * Download a batch of binary RLE RGB565 images from GitHub,
+ * store them in PSRAM,
+ * decode each image into a 135x240 buffer,
+ * and cycle through them locally on the Tenstar ESP32-S3 ST7789.
  *
  * Binary RLE format:
  * [count uint16 little-endian][colour uint16 little-endian]
  *
  * Example:
- * 4 pixels of 0x0000 is stored as:
- *
+ * 4 pixels of 0x0000:
  * count  = 4      -> 04 00
  * colour = 0x0000 -> 00 00
  *
@@ -26,13 +24,50 @@
 #include <Adafruit_ST7789.h>
 #include <SPI.h>
 #include <esp_timer.h>
+#include "esp_heap_caps.h"
+
+// -------------------- User settings --------------------
+
+// How many images the ESP32 should download from the manifest.
+// If your manifest has 12 images and this is 5, it downloads the first 5.
+// If your manifest has 12 images and this is 12, it downloads all 12.
+#define IMAGES_TO_DOWNLOAD 12
+
+// Automatic timing spreads all cached images across the GitHub check window.
+//
+// Example:
+// GITHUB_CHECK_US = 5 minutes
+// IMAGES_TO_DOWNLOAD = 12
+//
+// 300 seconds / 12 images = 25 seconds per image
+#define USE_AUTOMATIC_IMAGE_TIMING false
+
+// Custom local image timing.
+// This is only used when USE_AUTOMATIC_IMAGE_TIMING is false.
+//
+// 10000000 us = 10 seconds
+// 25000000 us = 25 seconds
+// 60000000 us = 60 seconds
+#define CUSTOM_LOCAL_CYCLE_US 5000000LL
+
+// How often the ESP32 checks GitHub for a new batch.
+//
+// 300000000 us = 5 minutes
+// 60000000 us  = 1 minute
+#define GITHUB_CHECK_US 300000000LL
 
 // -------------------- WiFi --------------------
 
 const char* ssid     = "";
 const char* password = "";
 
-const char* url = "https://raw.githubusercontent.com/niki-mardari/esp32_github_integration/refs/heads/image-data/data/Encoded/miku1.rle";
+// -------------------- GitHub batch URLs --------------------
+
+const char* MANIFEST_URL =
+  "https://raw.githubusercontent.com/niki-mardari/esp32_github_integration/refs/heads/image-data/data/current_batch/manifest.txt";
+
+const char* BATCH_BASE_URL =
+  "https://raw.githubusercontent.com/niki-mardari/esp32_github_integration/refs/heads/image-data/data/current_batch/";
 
 // -------------------- Display size --------------------
 
@@ -54,30 +89,42 @@ const char* url = "https://raw.githubusercontent.com/niki-mardari/esp32_github_i
 
 #define READ_BUFFSIZE 1024
 
-// 5 minutes in microseconds.
-// esp_timer_get_time() uses microseconds.
-#define UPDATE_INTERVAL_US 300000000LL
+// Maximum supported cache size.
+// Keep this equal to or bigger than IMAGES_TO_DOWNLOAD.
+#define MAX_CACHED_IMAGES 12
+
+// Safety check.
+// IMAGES_TO_DOWNLOAD should not be bigger than MAX_CACHED_IMAGES.
+#if IMAGES_TO_DOWNLOAD > MAX_CACHED_IMAGES
+#error "IMAGES_TO_DOWNLOAD cannot be bigger than MAX_CACHED_IMAGES"
+#endif
 
 // -------------------- Image buffer --------------------
 
-// Important:
-// Do NOT multiply by 2 here.
-// uint16_t already uses 2 bytes per pixel.
+// This is the decoded image buffer.
+// Only one decoded image is needed at a time.
+//
+// 135 x 240 = 32400 pixels
+// 32400 x 2 bytes = 64800 bytes
 uint16_t image[TOTAL_PIXELS];
 
-// Tracks where the next decoded pixel goes.
-size_t image_index = 0;
+// -------------------- Cached RLE image storage --------------------
 
-// Binary RLE run buffer.
-// A complete run is 4 bytes:
-// byte 0: count low
-// byte 1: count high
-// byte 2: colour low
-// byte 3: colour high
-uint8_t runBuf[4];
-size_t runByteIndex = 0;
+struct CachedImage {
+  String name;
+  uint8_t* data;
+  size_t size;
+};
 
-int64_t updateTime = 0;
+CachedImage cachedImages[MAX_CACHED_IMAGES];
+
+size_t cachedCount = 0;
+size_t currentImageIndex = 0;
+
+uint32_t lastManifestHash = 0;
+
+int64_t lastLocalCycleTime = 0;
+int64_t lastGithubCheckTime = 0;
 
 // -------------------- TFT object --------------------
 
@@ -101,23 +148,28 @@ void connectWiFi() {
   Serial.println("Connected, IP: " + WiFi.localIP().toString());
 }
 
-// -------------------- Little-endian decoder --------------------
+// -------------------- Hash helper --------------------
 
-// Converts two bytes into one uint16_t.
-//
-// Example:
-// low  = 0x17
-// high = 0x53
-//
-// result = 0x5317
-uint16_t read_u16_le(uint8_t low, uint8_t high) {
-  return (uint16_t)low | ((uint16_t)high << 8);
+uint32_t hashString(const String& text) {
+  uint32_t hash = 2166136261UL;
+
+  for (size_t i = 0; i < text.length(); i++) {
+    hash ^= (uint8_t)text[i];
+    hash *= 16777619UL;
+  }
+
+  return hash;
 }
 
-// -------------------- Checksum --------------------
+// -------------------- Little-endian decoder --------------------
 
-// Simple checksum so you can see if the downloaded image changed.
-uint32_t calculateChecksum() {
+uint16_t read_u16_le(const uint8_t* data) {
+  return (uint16_t)data[0] | ((uint16_t)data[1] << 8);
+}
+
+// -------------------- Image checksum --------------------
+
+uint32_t calculateImageChecksum() {
   uint32_t checksum = 2166136261UL;
 
   for (size_t i = 0; i < TOTAL_PIXELS; i++) {
@@ -131,78 +183,91 @@ uint32_t calculateChecksum() {
   return checksum;
 }
 
-// -------------------- RLE run handler --------------------
+// -------------------- Dynamic display timing --------------------
 
-// Takes one decoded run and expands it into the image buffer.
+// Returns how long each image should stay on the screen.
+//
+// Automatic mode:
+// Divides the GitHub check time by the number of cached images.
 //
 // Example:
-// count  = 4
-// colour = 0x0000
+// 300 seconds / 12 images = 25 seconds per image
 //
-// Writes:
-// image[x] = 0x0000
-// image[x + 1] = 0x0000
-// image[x + 2] = 0x0000
-// image[x + 3] = 0x0000
-bool handleRun(uint16_t count, uint16_t colour) {
-  if (count == 0) {
-    Serial.println("Error: RLE run has count 0.");
-    return false;
+// Manual mode:
+// Uses CUSTOM_LOCAL_CYCLE_US directly.
+int64_t getLocalCycleTime() {
+  if (!USE_AUTOMATIC_IMAGE_TIMING) {
+    return CUSTOM_LOCAL_CYCLE_US;
   }
 
-  if (image_index + count > TOTAL_PIXELS) {
-    Serial.println("Error: RLE data would overflow image buffer.");
-    Serial.printf("Image index: %u\n", (unsigned int)image_index);
-    Serial.printf("Run count:   %u\n", count);
-    Serial.printf("Total:       %u\n", TOTAL_PIXELS);
-    return false;
+  if (cachedCount == 0) {
+    return CUSTOM_LOCAL_CYCLE_US;
   }
 
-  for (uint16_t i = 0; i < count; i++) {
-    image[image_index] = colour;
-    image_index++;
-  }
-
-  return true;
+  return GITHUB_CHECK_US / cachedCount;
 }
 
-// -------------------- Binary RLE byte processor --------------------
+// -------------------- Free cached images --------------------
 
-// Processes raw bytes from the HTTP stream.
-//
-// Every 4 bytes makes one complete RLE run:
-//
-// byte 0 and 1 = count
-// byte 2 and 3 = colour
-bool processRleBytes(const uint8_t* data, size_t len) {
-  for (size_t i = 0; i < len; i++) {
-    runBuf[runByteIndex] = data[i];
-    runByteIndex++;
-
-    // Once we have 4 bytes, decode one complete RLE run.
-    if (runByteIndex == 4) {
-      uint16_t count  = read_u16_le(runBuf[0], runBuf[1]);
-      uint16_t colour = read_u16_le(runBuf[2], runBuf[3]);
-
-      if (!handleRun(count, colour)) {
-        return false;
-      }
-
-      runByteIndex = 0;
+void freeCachedImages() {
+  for (size_t i = 0; i < cachedCount; i++) {
+    if (cachedImages[i].data != nullptr) {
+      heap_caps_free(cachedImages[i].data);
+      cachedImages[i].data = nullptr;
     }
+
+    cachedImages[i].name = "";
+    cachedImages[i].size = 0;
   }
 
+  cachedCount = 0;
+  currentImageIndex = 0;
+}
+
+// -------------------- Download text file --------------------
+
+bool downloadTextFile(const String& url, String& output) {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi disconnected. Reconnecting...");
+    connectWiFi();
+  }
+
+  WiFiClientSecure client;
+  client.setInsecure();
+
+  HTTPClient https;
+  https.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+
+  String fetchUrl = url + "?t=" + String(millis());
+
+  Serial.println();
+  Serial.println("Downloading text:");
+  Serial.println(fetchUrl);
+
+  if (!https.begin(client, fetchUrl)) {
+    Serial.println("Error: unable to start HTTPS request.");
+    return false;
+  }
+
+  int httpCode = https.GET();
+
+  if (httpCode != HTTP_CODE_OK) {
+    Serial.printf("GET failed, HTTP code: %d\n", httpCode);
+    https.end();
+    return false;
+  }
+
+  output = https.getString();
+
+  https.end();
   return true;
 }
 
-// -------------------- Download and decode image --------------------
+// -------------------- Download binary file into PSRAM --------------------
 
-bool fetchImageData() {
-  image_index = 0;
-  runByteIndex = 0;
-
-  memset(image, 0, sizeof(image));
-  memset(runBuf, 0, sizeof(runBuf));
+bool downloadBinaryToPsram(const String& url, uint8_t** outputData, size_t* outputSize) {
+  *outputData = nullptr;
+  *outputSize = 0;
 
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("WiFi disconnected. Reconnecting...");
@@ -215,11 +280,10 @@ bool fetchImageData() {
   HTTPClient https;
   https.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
 
-  // Cache-busting so GitHub does not return an old cached file.
-  String fetchUrl = String(url) + "?t=" + String(millis());
+  String fetchUrl = url + "?t=" + String(millis());
 
   Serial.println();
-  Serial.println("Fetching binary RLE image...");
+  Serial.println("Downloading binary:");
   Serial.println(fetchUrl);
 
   if (!https.begin(client, fetchUrl)) {
@@ -236,28 +300,41 @@ bool fetchImageData() {
   }
 
   int contentLength = https.getSize();
+
+  if (contentLength <= 0) {
+    Serial.printf("Error: bad content length: %d\n", contentLength);
+    https.end();
+    return false;
+  }
+
+  uint8_t* buffer = (uint8_t*)heap_caps_malloc(contentLength, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+
+  if (buffer == nullptr) {
+    Serial.println("Warning: PSRAM allocation failed, trying normal RAM.");
+    buffer = (uint8_t*)malloc(contentLength);
+  }
+
+  if (buffer == nullptr) {
+    Serial.printf("Error: could not allocate %d bytes.\n", contentLength);
+    https.end();
+    return false;
+  }
+
   WiFiClient* stream = https.getStreamPtr();
 
-  Serial.printf("Download size: %d bytes\n", contentLength);
+  size_t totalRead = 0;
+  uint8_t tempBuffer[READ_BUFFSIZE];
 
-  uint8_t readBuffer[READ_BUFFSIZE];
-
-  while (https.connected() && (contentLength > 0 || contentLength == -1)) {
+  while (https.connected() && totalRead < (size_t)contentLength) {
     size_t availableBytes = stream->available();
 
     if (availableBytes > 0) {
       size_t toRead = min((size_t)READ_BUFFSIZE, availableBytes);
-      int bytesRead = stream->readBytes(readBuffer, toRead);
+      int bytesRead = stream->readBytes(tempBuffer, toRead);
 
       if (bytesRead > 0) {
-        if (!processRleBytes(readBuffer, bytesRead)) {
-          https.end();
-          return false;
-        }
-
-        if (contentLength > 0) {
-          contentLength -= bytesRead;
-        }
+        memcpy(buffer + totalRead, tempBuffer, bytesRead);
+        totalRead += bytesRead;
       }
     }
 
@@ -266,36 +343,254 @@ bool fetchImageData() {
 
   https.end();
 
-  // If this is not zero, the file ended halfway through a 4-byte RLE run.
-  if (runByteIndex != 0) {
-    Serial.println("Error: RLE file ended with incomplete 4-byte run.");
-    Serial.printf("Remaining partial bytes: %u\n", (unsigned int)runByteIndex);
+  if (totalRead != (size_t)contentLength) {
+    Serial.printf("Error: downloaded %u / %d bytes.\n",
+                  (unsigned int)totalRead,
+                  contentLength);
+
+    heap_caps_free(buffer);
     return false;
   }
 
-  Serial.printf("Decoded pixels: %u / %u\n", (unsigned int)image_index, TOTAL_PIXELS);
-
-  if (image_index != TOTAL_PIXELS) {
-    Serial.println("Error: decoded pixel count is wrong.");
+  if (totalRead % 4 != 0) {
+    Serial.println("Error: RLE file size is not divisible by 4.");
+    heap_caps_free(buffer);
     return false;
   }
 
-  uint32_t checksum = calculateChecksum();
-  Serial.printf("Checksum: 0x%08lX\n", (unsigned long)checksum);
+  *outputData = buffer;
+  *outputSize = totalRead;
+
+  Serial.printf("Downloaded %u bytes.\n", (unsigned int)totalRead);
+  return true;
+}
+
+// -------------------- Manifest parser --------------------
+
+// Reads image names from manifest.txt.
+//
+// It ignores:
+// empty lines
+// comment lines starting with #
+//
+// It accepts:
+// image_0.rle
+// image_1.rle
+//
+// maxNames controls how many images the ESP32 will use.
+int parseManifest(const String& manifest, String names[], int maxNames) {
+  int count = 0;
+  int start = 0;
+
+  while (start < manifest.length() && count < maxNames) {
+    int end = manifest.indexOf('\n', start);
+
+    if (end == -1) {
+      end = manifest.length();
+    }
+
+    String line = manifest.substring(start, end);
+    line.trim();
+
+    if (line.length() > 0 && !line.startsWith("#")) {
+      if (line.endsWith(".rle")) {
+        names[count] = line;
+        count++;
+      }
+    }
+
+    start = end + 1;
+  }
+
+  return count;
+}
+
+// -------------------- Decode RLE data into image buffer --------------------
+
+bool decodeRleImage(const uint8_t* data, size_t size) {
+  if (data == nullptr || size == 0) {
+    Serial.println("Error: empty RLE data.");
+    return false;
+  }
+
+  if (size % 4 != 0) {
+    Serial.println("Error: RLE size is not divisible by 4.");
+    return false;
+  }
+
+  size_t imageIndex = 0;
+
+  memset(image, 0, sizeof(image));
+
+  for (size_t i = 0; i < size; i += 4) {
+    uint16_t count  = read_u16_le(data + i);
+    uint16_t colour = read_u16_le(data + i + 2);
+
+    if (count == 0) {
+      Serial.println("Error: RLE run has count 0.");
+      return false;
+    }
+
+    if (imageIndex + count > TOTAL_PIXELS) {
+      Serial.println("Error: RLE data would overflow image buffer.");
+      Serial.printf("Image index: %u\n", (unsigned int)imageIndex);
+      Serial.printf("Run count:   %u\n", count);
+      Serial.printf("Total:       %u\n", TOTAL_PIXELS);
+      return false;
+    }
+
+    for (uint32_t j = 0; j < count; j++) {
+      image[imageIndex] = colour;
+      imageIndex++;
+    }
+  }
+
+  if (imageIndex != TOTAL_PIXELS) {
+    Serial.printf("Error: decoded %u / %u pixels.\n",
+                  (unsigned int)imageIndex,
+                  TOTAL_PIXELS);
+    return false;
+  }
 
   return true;
 }
 
-// -------------------- Draw image --------------------
+// -------------------- Display cached image --------------------
 
-void drawImage() {
-  if (image_index != TOTAL_PIXELS) {
-    Serial.println("Image not drawn because pixel count is wrong.");
-    return;
+bool displayCachedImage(size_t index) {
+  if (index >= cachedCount) {
+    Serial.println("Error: cached image index out of range.");
+    return false;
   }
+
+  Serial.println();
+  Serial.printf("Displaying cached image %u / %u\n",
+                (unsigned int)(index + 1),
+                (unsigned int)cachedCount);
+
+  Serial.println(cachedImages[index].name);
+
+  if (!decodeRleImage(cachedImages[index].data, cachedImages[index].size)) {
+    Serial.println("Error: failed to decode cached image.");
+    return false;
+  }
+
+  uint32_t checksum = calculateImageChecksum();
+
+  Serial.printf("Checksum: 0x%08lX\n", (unsigned long)checksum);
+  Serial.printf("Next image in: %lld seconds\n", getLocalCycleTime() / 1000000LL);
 
   tft.drawRGBBitmap(0, 0, image, SCREEN_WIDTH, SCREEN_HEIGHT);
   Serial.println("Display updated.");
+
+  return true;
+}
+
+// -------------------- Update cached batch from GitHub --------------------
+
+bool updateBatchIfNeeded() {
+  String manifest;
+
+  if (!downloadTextFile(MANIFEST_URL, manifest)) {
+    Serial.println("Error: could not download manifest.");
+    return false;
+  }
+
+  uint32_t manifestHash = hashString(manifest);
+
+  if (manifestHash == lastManifestHash && cachedCount > 0) {
+    Serial.println("Manifest unchanged. Keeping current cached batch.");
+    return true;
+  }
+
+  Serial.println("New manifest detected. Downloading new batch...");
+
+  String names[MAX_CACHED_IMAGES];
+
+  // This is where IMAGES_TO_DOWNLOAD controls how many images the ESP32 downloads.
+  int imageCount = parseManifest(manifest, names, IMAGES_TO_DOWNLOAD);
+
+  if (imageCount <= 0) {
+    Serial.println("Error: manifest has no RLE image files.");
+    return false;
+  }
+
+  Serial.printf("Manifest images selected: %d\n", imageCount);
+
+  CachedImage newCache[MAX_CACHED_IMAGES];
+
+  for (int i = 0; i < MAX_CACHED_IMAGES; i++) {
+    newCache[i].name = "";
+    newCache[i].data = nullptr;
+    newCache[i].size = 0;
+  }
+
+  int downloadedCount = 0;
+
+  for (int i = 0; i < imageCount; i++) {
+    String fileUrl = String(BATCH_BASE_URL) + names[i];
+
+    uint8_t* data = nullptr;
+    size_t size = 0;
+
+    if (!downloadBinaryToPsram(fileUrl, &data, &size)) {
+      Serial.println("Error: failed to download one batch image.");
+
+      for (int j = 0; j < downloadedCount; j++) {
+        if (newCache[j].data != nullptr) {
+          heap_caps_free(newCache[j].data);
+        }
+      }
+
+      return false;
+    }
+
+    newCache[downloadedCount].name = names[i];
+    newCache[downloadedCount].data = data;
+    newCache[downloadedCount].size = size;
+    downloadedCount++;
+  }
+
+  // New batch downloaded successfully.
+  // Now replace the old cache.
+  freeCachedImages();
+
+  for (int i = 0; i < downloadedCount; i++) {
+    cachedImages[i] = newCache[i];
+  }
+
+  cachedCount = downloadedCount;
+  currentImageIndex = 0;
+  lastManifestHash = manifestHash;
+
+  Serial.println();
+  Serial.printf("Cached images: %u\n", (unsigned int)cachedCount);
+  Serial.printf("Automatic timing: %s\n", USE_AUTOMATIC_IMAGE_TIMING ? "ON" : "OFF");
+  Serial.printf("Image display time: %lld seconds\n", getLocalCycleTime() / 1000000LL);
+  Serial.printf("GitHub check time: %lld seconds\n", GITHUB_CHECK_US / 1000000LL);
+  Serial.printf("Free heap:  %u bytes\n", ESP.getFreeHeap());
+  Serial.printf("Free PSRAM: %u bytes\n", ESP.getFreePsram());
+
+  displayCachedImage(currentImageIndex);
+
+  return true;
+}
+
+// -------------------- Print settings --------------------
+
+void printSettings() {
+  Serial.println();
+  Serial.println("Settings:");
+  Serial.printf("Images to download: %d\n", IMAGES_TO_DOWNLOAD);
+  Serial.printf("Max cached images:  %d\n", MAX_CACHED_IMAGES);
+  Serial.printf("Auto timing:        %s\n", USE_AUTOMATIC_IMAGE_TIMING ? "ON" : "OFF");
+  Serial.printf("GitHub check:       %lld seconds\n", GITHUB_CHECK_US / 1000000LL);
+
+  if (USE_AUTOMATIC_IMAGE_TIMING) {
+    Serial.println("Image timing:       automatic");
+  } else {
+    Serial.printf("Image timing:       %lld seconds\n", CUSTOM_LOCAL_CYCLE_US / 1000000LL);
+  }
 }
 
 // -------------------- Setup --------------------
@@ -304,6 +599,14 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
 
+  Serial.println();
+  Serial.println("Tenstar ESP32-S3 RLE Batch Viewer");
+  Serial.printf("PSRAM size: %u bytes\n", ESP.getPsramSize());
+  Serial.printf("Free PSRAM: %u bytes\n", ESP.getFreePsram());
+  Serial.printf("Free heap:  %u bytes\n", ESP.getFreeHeap());
+
+  printSettings();
+
   pinMode(TFT_BL, OUTPUT);
   digitalWrite(TFT_BL, HIGH);
 
@@ -311,25 +614,18 @@ void setup() {
 
   tft.init(SCREEN_WIDTH, SCREEN_HEIGHT);
 
-  // 40 MHz is fast. If the screen glitches, change this to 20000000.
+  // If the image glitches, reduce this to 20000000.
   tft.setSPISpeed(40000000);
 
-  // Try 0 or 2 for portrait depending on your screen direction.
   tft.setRotation(2);
-
   tft.fillScreen(ST77XX_BLACK);
 
   connectWiFi();
 
-  Serial.println("Initial image load...");
+  updateBatchIfNeeded();
 
-  if (fetchImageData()) {
-    drawImage();
-  } else {
-    Serial.println("Initial image load failed.");
-  }
-
-  updateTime = esp_timer_get_time();
+  lastLocalCycleTime = esp_timer_get_time();
+  lastGithubCheckTime = esp_timer_get_time();
 }
 
 // -------------------- Main loop --------------------
@@ -337,16 +633,28 @@ void setup() {
 void loop() {
   int64_t currentTime = esp_timer_get_time();
 
-  if (currentTime - updateTime >= UPDATE_INTERVAL_US) {
+  // Calculate how long each cached image should stay on screen.
+  int64_t localCycleTime = getLocalCycleTime();
+
+  // Change displayed image from local cache.
+  if (cachedCount > 0 && currentTime - lastLocalCycleTime >= localCycleTime) {
+    currentImageIndex = (currentImageIndex + 1) % cachedCount;
+    displayCachedImage(currentImageIndex);
+
+    lastLocalCycleTime = esp_timer_get_time();
+  }
+
+  // Check GitHub for a new batch.
+  if (currentTime - lastGithubCheckTime >= GITHUB_CHECK_US) {
     Serial.println();
-    Serial.println("5 minutes passed. Updating image...");
+    Serial.println("Checking GitHub for new batch...");
 
-    if (fetchImageData()) {
-      drawImage();
-    } else {
-      Serial.println("Update failed. Keeping previous image.");
-    }
+    updateBatchIfNeeded();
 
-    updateTime = esp_timer_get_time();
+    // Reset both timers after the GitHub check.
+    // This prevents the ESP32 from instantly skipping images
+    // right after a new batch is downloaded.
+    lastGithubCheckTime = esp_timer_get_time();
+    lastLocalCycleTime = esp_timer_get_time();
   }
 }
