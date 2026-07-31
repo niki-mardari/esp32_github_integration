@@ -1,1 +1,1 @@
-data/Encoded/alien_romulus.rle
+data/Encoded/coke.rle
