@@ -1,1 +1,1 @@
-data/Encoded/IMG_7778.rle
+data/Encoded/alien_romulus.rle
