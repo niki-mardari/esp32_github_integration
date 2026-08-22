@@ -1,1 +1,1 @@
-data/Encoded/miku2.rle
+data/Encoded/no_quiero_balls.rle
