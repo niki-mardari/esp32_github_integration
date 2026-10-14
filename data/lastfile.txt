@@ -1,1 +1,1 @@
-data/Encoded/miku1.rle
+data/Encoded/miku2.rle
